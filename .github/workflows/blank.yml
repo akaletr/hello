@@ -32,7 +32,7 @@ jobs:
       - name: Build app
         run: |
           go mod tidy
-          go build -o main ./
+          go build -o hello ./
 
       - name: Deploy to VM
         run: |

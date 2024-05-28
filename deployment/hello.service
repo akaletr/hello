@@ -1,11 +1,11 @@
 [Unit]
-Description=gRPC Auth
+Description=hello app
 After=network.target
 
 [Service]
 User=root
 WorkingDirectory=/root/apps/hello
-ExecStart=/root/apps/hello/main
+ExecStart=/root/apps/hello/hello
 Restart=always
 RestartSec=4
 StandardOutput=inherit
