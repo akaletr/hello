@@ -1,38 +1,60 @@
-name: Deploy to Server
+name: Deploy app
 
 on:
   push:
     branches:
-      - main  # Запускайте workflow при пуше в ветку main
+      - main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      HOST: root@62.109.5.203
+      DEPLOY_DIRECTORY: /root/apps/hello
+#      CONFIG_PATH: /root/apps/grpc-auth/config/prod.yaml
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Set up Go
-        uses: actions/setup-go@v4
+      - name: Checkout repository
+        uses: actions/checkout@v2
         with:
-          go-version: '1.20'  # Убедитесь, что версия Go соответствует вашей
+          ref: ${{ github.event.inputs.tag }}
+#      - name: Check if tag exists
+#        run: |
+#          git fetch --all --tags
+#          if ! git tag | grep -q "^${{ github.event.inputs.tag }}$"; then
+#            echo "error: Tag '${{ github.event.inputs.tag }}' not found"
+#            exit 1
+#          fi
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.21.2
+      - name: Build app
+        run: |
+          go mod download
+          go build -o main ./
 
-      - name: Build project
-        run: go build -o myapp ./...
-
-      - name: Copy files via SSH
+      - name: Deploy to VM
+        run: |
+          sudo apt-get install -y ssh rsync
+          echo "$SSH_PRIVATE_KEY" > deploy_key.pem
+          chmod 600 deploy_key.pem
+          ssh -i deploy_key.pem -o StrictHostKeyChecking=no ${{ env.HOST }} "mkdir -p ${{ env.DEPLOY_DIRECTORY }}"
+          rsync -avz -e 'ssh -i deploy_key.pem -o StrictHostKeyChecking=no' --exclude='.git' ./ ${{ env.HOST }}:${{ env.DEPLOY_DIRECTORY }}
+          rsync -avz -e 'ssh -i deploy_key.pem -o StrictHostKeyChecking=no' ./migrator ${{ env.HOST }}:${{ env.DEPLOY_DIRECTORY }}/migrator
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      - name: Remove old systemd service file
         run: |
-          echo "$SSH_PRIVATE_KEY" > private_key
-          chmod 600 private_key
-          scp -i private_key -r ./myapp root@62.109.5.203:/path/to/your/project
-          ssh -i private_key root@62.109.5.203 'bash -s' << 'EOF'
-            cd /path/to/your/project
-            ./myapp &
-          EOF
-        shell: bash
-
-      - name: Clean up
-        run: rm private_key
+          ssh -i deploy_key.pem -o StrictHostKeyChecking=no ${{ env.HOST }} "rm -f /etc/systemd/system/hello.service"
+      - name: List workspace contents
+        run: |
+          echo "Listing deployment folder contents:"
+          ls -la ${{ github.workspace }}/deployment
+      - name: Copy systemd service file
+        run: |
+          scp -i deploy_key.pem -o StrictHostKeyChecking=no ${{ github.workspace }}/deployment/hello.service ${{ env.HOST }}:/tmp/hello.service
+          ssh -i deploy_key.pem -o StrictHostKeyChecking=no ${{ env.HOST }} "mv /tmp/hello.service /etc/systemd/system/hello.service"
+      - name: Start application
+        run: |
+          ssh -i deploy_key.pem -o StrictHostKeyChecking=no ${{ env.HOST }} "systemctl daemon-reload && systemctl restart hello.service"
