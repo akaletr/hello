@@ -11,7 +11,7 @@ func main() {
 	}
 
 	server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("hello world"))
+		w.Write([]byte("hello world!"))
 	})
 
 	log.Fatal(server.ListenAndServe())
